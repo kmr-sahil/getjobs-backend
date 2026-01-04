@@ -9,17 +9,22 @@ async function otpCheck(email, otp) {
     database: process.env.DB_NAME,
     password: process.env.DB_PASSWORD,
     port: process.env.DB_PORT,
+    ssl: {
+      require: true,
+    },
   });
 
   try {
     await client.connect();
-    const query = `SELECT * FROM JB_USERS WHERE email = $1 AND otp = $2`;
+    const query = `SELECT * FROM users WHERE email = $1 AND otp = $2`;
     const values = [email, otp];
     const result = await client.query(query, values);
     if (result.rows.length === 0) {
-      return false; 
+      return false;
     }
-    const token = jwt.sign({ email }, process.env.SECRET_KEY, { expiresIn: "30d" });
+    const token = jwt.sign({ email }, process.env.SECRET_KEY, {
+      expiresIn: "30d",
+    });
     return { token };
   } catch (error) {
     console.error("Error during OTP verification:", error);
@@ -30,5 +35,5 @@ async function otpCheck(email, otp) {
 }
 
 module.exports = {
-  otpCheck
+  otpCheck,
 };

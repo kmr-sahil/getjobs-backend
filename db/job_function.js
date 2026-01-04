@@ -1,4 +1,4 @@
-const { Pool } = require("pg"); 
+const { Pool } = require("pg");
 const cron = require("node-cron");
 const path = require("path");
 
@@ -9,6 +9,10 @@ const pool = new Pool({
   database: process.env.DB_NAME,
   password: process.env.DB_PASSWORD,
   port: process.env.DB_PORT,
+  ssl: {
+    require: true,
+    rejectUnauthorized: false,
+  },
 });
 
 async function executeQuery(query, values = []) {
@@ -23,7 +27,7 @@ async function executeQuery(query, values = []) {
 
 async function updateJobStatus() {
   const query = `
-    UPDATE jb_jobs 
+    UPDATE jobs 
     SET is_ok = false 
     WHERE is_ok = true 
     AND last_update < (CURRENT_DATE - INTERVAL '31 days')
@@ -45,7 +49,7 @@ cron.schedule("0 0 * * *", async () => {
 
 async function jobUpdate(jobIds) {
   const queryText =
-    "UPDATE jb_jobs SET is_ok = TRUE, last_update = CURRENT_DATE WHERE id = $1";
+    "UPDATE jobs SET is_ok = TRUE, last_update = CURRENT_DATE WHERE id = $1";
   try {
     for (const jobId of jobIds) {
       const queryParams = [jobId];
@@ -58,86 +62,98 @@ async function jobUpdate(jobIds) {
 
 async function getuserjobData(email, page) {
   try {
-    const jobsPerPage = 20; 
-    const offset = (page - 1) * jobsPerPage; 
+    const jobsPerPage = 20;
+    const offset = (page - 1) * jobsPerPage;
     const query = `
      SELECT 
-    jb_jobs.job_title, 
-    jb_jobs.is_ok, 
-    jb_jobs.impressions, 
-    jb_jobs.last_update,
+    jobs.job_title, 
+    jobs.is_ok, 
+    jobs.impressions, 
+    jobs.last_update,
     company_profile.company_name AS company_name
-FROM jb_users
-JOIN company_profile ON jb_users.id = company_profile.jb_user_id
-JOIN jb_jobs ON company_profile.id = jb_jobs.company_profile_id
-WHERE jb_users.email = $1
+FROM users
+JOIN company_profile ON users.id = company_profile.jb_user_id
+JOIN jobs ON company_profile.id = jobs.company_profile_id
+WHERE users.email = $1
 LIMIT $2 OFFSET $3;
     `;
 
     const jobResult = await executeQuery(query, [email, jobsPerPage, offset]);
 
     if (jobResult.length === 0) {
-      return { jobResult: [], hasMore: false }; 
+      return { jobResult: [], hasMore: false };
     }
 
-    return { jobResult, hasMore: jobResult.length === jobsPerPage }; 
+    return { jobResult, hasMore: jobResult.length === jobsPerPage };
   } catch (error) {
     console.error("Error executing query:", error);
     return { jobResult: [], hasMore: false };
   }
 }
 
-async function getData(offset, limit, searchTerm, location, remote, categories, level, compensation, commitment) {
+async function getData(
+  offset,
+  limit,
+  searchTerm,
+  location,
+  remote,
+  categories,
+  level,
+  compensation,
+  commitment
+) {
   try {
     let query = `
       SELECT 
-        JB_JOBS.*, 
+        jobs.*, 
         company_profile.company_name, 
         company_profile.website, 
         company_profile.image_url
-      FROM JB_JOBS
+      FROM jobs
       JOIN company_profile 
-        ON JB_JOBS.company_profile_id = company_profile.id
+        ON jobs.company_profile_id = company_profile.id
     `;
 
-    let conditions = []; 
+    let conditions = [];
     let params = [];
 
     if (searchTerm) {
-      conditions.push(`JB_JOBS.job_title ILIKE $${params.length + 1}`);
-      params.push(`%${searchTerm}%`); 
+      conditions.push(`jobs.job_title ILIKE $${params.length + 1}`);
+      params.push(`%${searchTerm}%`);
     }
 
     if (remote === true) {
       if (location) {
-        conditions.push(`JB_JOBS.remote = true AND JB_JOBS.work_loc ILIKE $${params.length + 1}`);
+        conditions.push(
+          `jobs.remote = true AND jobs.work_loc ILIKE $${params.length + 1}`
+        );
         params.push(`%${location}%`);
       } else {
-        conditions.push(`JB_JOBS.remote = $${params.length + 1}`);
+        conditions.push(`jobs.remote = $${params.length + 1}`);
         params.push(remote);
       }
     } else if (location) {
-      conditions.push(`JB_JOBS.work_loc ILIKE $${params.length + 1}`);
+      conditions.push(`jobs.work_loc ILIKE $${params.length + 1}`);
       params.push(`%${location}%`);
     }
 
     if (categories) {
-      conditions.push(`JB_JOBS.categories ILIKE $${params.length + 1}`);
+      conditions.push(`jobs.categories ILIKE $${params.length + 1}`);
       params.push(`%${categories}%`);
     }
 
     if (level) {
-      conditions.push(`JB_JOBS.level ILIKE $${params.length + 1}`);
+      conditions.push(`jobs.level ILIKE $${params.length + 1}`);
       params.push(`%${level}%`);
     }
 
     if (compensation) {
-      conditions.push(`JB_JOBS.compensation = $${params.length + 1}`);
+      conditions.push(`jobs.compensation = $${params.length + 1}`);
       params.push(compensation);
     }
 
     if (commitment) {
-      conditions.push(`JB_JOBS.commitment ILIKE $${params.length + 1}`);
+      conditions.push(`jobs.commitment ILIKE $${params.length + 1}`);
       params.push(`%${commitment}%`);
     }
 
@@ -145,7 +161,7 @@ async function getData(offset, limit, searchTerm, location, remote, categories, 
       query += ` WHERE ` + conditions.join(" AND ");
     }
 
-    query += ` ORDER BY JB_JOBS.last_update DESC`;
+    query += ` ORDER BY jobs.last_update DESC`;
 
     query += ` OFFSET $${params.length + 1} LIMIT $${params.length + 2}`;
     params.push(offset, limit);
@@ -162,16 +178,16 @@ async function getJobById(jobId) {
   try {
     const query = `
       SELECT 
-        JB_JOBS.*,
+        jobs.*,
         company_profile.company_name, 
         company_profile.website, 
         company_profile.image_url
-      FROM jb_jobs 
-      JOIN company_profile ON jb_jobs.company_profile_id = company_profile.id 
-      WHERE jb_jobs.id = $1
+      FROM jobs 
+      JOIN company_profile ON jobs.company_profile_id = company_profile.id 
+      WHERE jobs.id = $1
     `;
     const job = await executeQuery(query, [jobId]);
-    return job[0]; 
+    return job[0];
   } catch (error) {
     console.error("Error fetching job by ID:", error);
     return null;
@@ -194,7 +210,7 @@ async function insertData(
 ) {
   try {
     const insertJobQuery = `
-      INSERT INTO jb_jobs (
+      INSERT INTO jobs (
         company_profile_id, 
         job_title, 
         work_loc, 
@@ -224,7 +240,7 @@ async function insertData(
       level,
       compensation,
       name,
-      email
+      email,
     ];
 
     const insertedJob = await executeQuery(insertJobQuery, insertJobValues);
@@ -235,17 +251,17 @@ async function insertData(
 
     const jobDetailsQuery = `
       SELECT 
-        jb_jobs.*,
+        jobs.*,
         company_profile.company_name, 
         company_profile.website, 
         company_profile.image_url
-      FROM jb_jobs
-      JOIN company_profile ON jb_jobs.company_profile_id = company_profile.id
-      WHERE jb_jobs.id = $1
+      FROM jobs
+      JOIN company_profile ON jobs.company_profile_id = company_profile.id
+      WHERE jobs.id = $1
     `;
 
     const jobDetails = await executeQuery(jobDetailsQuery, [insertedJob[0].id]);
-    return jobDetails[0];  
+    return jobDetails[0];
   } catch (error) {
     console.error("Error inserting job data:", error);
     return null;
@@ -253,16 +269,29 @@ async function insertData(
 }
 
 async function impressiondb(jobId) {
-  const query = 'UPDATE jb_jobs SET impressions = impressions + 1 WHERE id = $1 ';
-  const addimp = await executeQuery(query, [jobId])
-  return addimp
+  const query = "UPDATE jobs SET impressions = impressions + 1 WHERE id = $1 ";
+  const addimp = await executeQuery(query, [jobId]);
+  return addimp;
 }
 
 async function updateJob(jobId, jobData) {
-  const { job_title, work_loc, commitment, remote, job_link, description, categories, level, compensation, company_profile_id, name, email } = jobData;
+  const {
+    job_title,
+    work_loc,
+    commitment,
+    remote,
+    job_link,
+    description,
+    categories,
+    level,
+    compensation,
+    company_profile_id,
+    name,
+    email,
+  } = jobData;
   try {
     const query = `
-      UPDATE jb_jobs
+      UPDATE jobs
       SET 
         job_title = $1,
         work_loc = $2,
@@ -279,7 +308,7 @@ async function updateJob(jobId, jobData) {
       WHERE id = $13
       RETURNING *
     `;
-    
+
     const updatedJob = await executeQuery(query, [
       job_title,
       work_loc,
@@ -293,28 +322,28 @@ async function updateJob(jobId, jobData) {
       name,
       email,
       company_profile_id,
-      jobId
+      jobId,
     ]);
-    
+
     if (updatedJob.length > 0) {
       const profileQuery = `
         SELECT 
           company_profile.company_name, 
           company_profile.website, 
           company_profile.image_url
-        FROM jb_jobs
-        JOIN company_profile ON jb_jobs.company_profile_id = company_profile.id
-        WHERE jb_jobs.id = $1
+        FROM jobs
+        JOIN company_profile ON jobs.company_profile_id = company_profile.id
+        WHERE jobs.id = $1
       `;
-      
+
       const profileDetails = await executeQuery(profileQuery, [jobId]);
-      
+
       return {
         ...updatedJob[0],
-        ...profileDetails[0] 
+        ...profileDetails[0],
       };
     }
-    
+
     return null;
   } catch (error) {
     console.error("Error updating job:", error);
@@ -325,17 +354,17 @@ async function updateJob(jobId, jobData) {
 async function deleteJob(jobId) {
   try {
     const query = `
-      DELETE FROM jb_jobs 
+      DELETE FROM jobs 
       WHERE id = $1 
       RETURNING *;
     `;
     const deletedJob = await executeQuery(query, [jobId]);
-    
+
     if (deletedJob.length === 0) {
       return null;
     }
-    
-    return deletedJob[0]; 
+
+    return deletedJob[0];
   } catch (error) {
     console.error("Error deleting job:", error);
     return null;
@@ -347,7 +376,7 @@ async function getJobImpressions(jobId) {
     SELECT 
         impressions
     FROM 
-        jb_jobs
+        jobs
     WHERE 
         id = $1
   `;
@@ -360,7 +389,7 @@ async function getJobImpressions(jobId) {
     console.log("Query rows:", rows);
 
     if (rows && rows.length > 0) {
-      const impressions = rows[0].impressions; 
+      const impressions = rows[0].impressions;
       console.log("Impressions found:", impressions);
       return impressions;
     } else {
@@ -375,10 +404,9 @@ async function getJobImpressions(jobId) {
 
 async function getTotalImpressions(email) {
   try {
-
     const userQuery = `
       SELECT id 
-      FROM jb_users 
+      FROM users 
       WHERE email = $1
     `;
     const userResult = await executeQuery(userQuery, [email]);
@@ -402,17 +430,19 @@ async function getTotalImpressions(email) {
           COUNT(CASE WHEN j.is_ok = TRUE THEN 1 END) AS jobs_ok_true, -- Total jobs with is_ok = true
           COUNT(CASE WHEN j.is_ok = FALSE THEN 1 END) AS jobs_ok_false -- Total jobs with is_ok = false
       FROM 
-          jb_users u
+          users u
       JOIN 
           company_profile cp ON u.id = cp.jb_user_id
       JOIN 
-          jb_jobs j ON cp.id = j.company_profile_id
+          jobs j ON cp.id = j.company_profile_id
       WHERE 
           u.id = $1
     `;
     const jobStatsResult = await executeQuery(jobStatsQuery, [userId]);
 
-    const rows = Array.isArray(jobStatsResult) ? jobStatsResult : jobStatsResult?.rows;
+    const rows = Array.isArray(jobStatsResult)
+      ? jobStatsResult
+      : jobStatsResult?.rows;
 
     console.log("Query rows:", rows);
 
@@ -454,7 +484,6 @@ async function getTotalImpressions(email) {
 
 async function insertResume(name, email, fileLink, position) {
   try {
-
     const query = `
       INSERT INTO user_details (name, email, s3_resume_url, position)
       VALUES ($1, $2, $3, $4)
@@ -466,7 +495,7 @@ async function insertResume(name, email, fileLink, position) {
 
     return {
       success: true,
-      data: result.rows[0], 
+      data: result.rows[0],
     };
   } catch (error) {
     console.error("Error inserting resume into database:", error);
@@ -478,24 +507,24 @@ async function insertResume(name, email, fileLink, position) {
   }
 }
 
-async function insertProfile(email,company_name, website, fileLink) {
+async function insertProfile(email, company_name, website, fileLink) {
   try {
-      const findUserQuery = 'SELECT id FROM jb_users WHERE email = $1';
-      const userResult = await executeQuery(findUserQuery, [email]);
-      if (userResult.length === 0) {
-          return { error: "User not found" };
-      }
-      const userId = userResult[0].id;
-      const insertProfileQuery = `
+    const findUserQuery = "SELECT id FROM users WHERE email = $1";
+    const userResult = await executeQuery(findUserQuery, [email]);
+    if (userResult.length === 0) {
+      return { error: "User not found" };
+    }
+    const userId = userResult[0].id;
+    const insertProfileQuery = `
           INSERT INTO company_profile (company_name, website, image_url, jb_user_id)
           VALUES ($1, $2, $3, $4)
           `;
-      const values = [company_name, website, fileLink, userId];
-      await executeQuery(insertProfileQuery, values);
-      return { success: true };
+    const values = [company_name, website, fileLink, userId];
+    await executeQuery(insertProfileQuery, values);
+    return { success: true };
   } catch (err) {
-      console.error("Error inserting profile", err);
-      return { error: err.message };
+    console.error("Error inserting profile", err);
+    return { error: err.message };
   }
 }
 
@@ -506,7 +535,7 @@ async function getAllCompanies() {
       cp.image_url, 
       COUNT(jj.id) AS total_jobs
     FROM company_profile cp
-    LEFT JOIN jb_jobs jj
+    LEFT JOIN jobs jj
       ON cp.id = jj.company_profile_id
     GROUP BY cp.id, cp.company_name, cp.image_url;
   `;
@@ -514,10 +543,10 @@ async function getAllCompanies() {
   try {
     const result = await executeQuery(query);
     console.log(result);
-    return result; 
+    return result;
   } catch (error) {
     console.error("Error fetching all companies:", error);
-    throw error; 
+    throw error;
   }
 }
 
@@ -527,22 +556,24 @@ async function getCompanyDetails(company) {
   FROM company_profile 
   WHERE LOWER(REPLACE(company_name, ' ', '')) ILIKE LOWER(REPLACE($1, ' ', ''));
 `;
-  
+
   const getJobCountQuery = `
     SELECT COUNT(*) AS total_jobs
-    FROM jb_jobs 
+    FROM jobs 
     WHERE company_profile_id = $1
   `;
 
   try {
-    const companyDetailsResult = await executeQuery(getCompanyDetailsQuery, [company]);
+    const companyDetailsResult = await executeQuery(getCompanyDetailsQuery, [
+      company,
+    ]);
     if (companyDetailsResult.length === 0) {
-      return null; 
+      return null;
     }
     const companyDetails = companyDetailsResult[0];
     const companyId = companyDetails.id;
-    const companyName = companyDetails.company_name
-    const imageUrl = companyDetails.image_url
+    const companyName = companyDetails.company_name;
+    const imageUrl = companyDetails.image_url;
 
     const jobCountResult = await executeQuery(getJobCountQuery, [companyId]);
     const totalJobs = parseInt(jobCountResult[0]?.total_jobs || "0", 10);
@@ -570,59 +601,59 @@ async function getCompanyJobDetails(company, searchParams, page) {
 
   let getJobsQuery = `
     SELECT 
-      jb_jobs.id,
-      jb_jobs.company_profile_id,
-      jb_jobs.job_title,
-      jb_jobs.work_loc,
-      jb_jobs.commitment,
-      jb_jobs.remote,
-      jb_jobs.job_link,
-      jb_jobs.is_ok,
-      jb_jobs.categories,
-      jb_jobs.level,
-      jb_jobs.compensation,
+      jobs.id,
+      jobs.company_profile_id,
+      jobs.job_title,
+      jobs.work_loc,
+      jobs.commitment,
+      jobs.remote,
+      jobs.job_link,
+      jobs.is_ok,
+      jobs.categories,
+      jobs.level,
+      jobs.compensation,
       company_profile.image_url
-    FROM jb_jobs
+    FROM jobs
     JOIN company_profile
-      ON jb_jobs.company_profile_id = company_profile.id
-    WHERE jb_jobs.company_profile_id = $1
+      ON jobs.company_profile_id = company_profile.id
+    WHERE jobs.company_profile_id = $1
   `;
 
   const queryParams = [];
-  let paramIndex = 2; 
+  let paramIndex = 2;
 
   if (searchParams.job_title) {
-    getJobsQuery += ` AND jb_jobs.job_title ILIKE $${paramIndex}`;
+    getJobsQuery += ` AND jobs.job_title ILIKE $${paramIndex}`;
     queryParams.push(`%${searchParams.job_title}%`);
     paramIndex++;
   }
   if (searchParams.location) {
-    getJobsQuery += ` AND jb_jobs.work_loc ILIKE $${paramIndex}`;
+    getJobsQuery += ` AND jobs.work_loc ILIKE $${paramIndex}`;
     queryParams.push(`%${searchParams.location}%`);
     paramIndex++;
   }
   if (searchParams.remote) {
-    getJobsQuery += ` AND jb_jobs.remote = $${paramIndex}`;
+    getJobsQuery += ` AND jobs.remote = $${paramIndex}`;
     queryParams.push(searchParams.remote);
     paramIndex++;
   }
   if (searchParams.commitment) {
-    getJobsQuery += ` AND jb_jobs.commitment ILIKE $${paramIndex}`;
+    getJobsQuery += ` AND jobs.commitment ILIKE $${paramIndex}`;
     queryParams.push(`%${searchParams.commitment}%`);
     paramIndex++;
   }
   if (searchParams.categories) {
-    getJobsQuery += ` AND jb_jobs.categories ILIKE $${paramIndex}`;
+    getJobsQuery += ` AND jobs.categories ILIKE $${paramIndex}`;
     queryParams.push(`%${searchParams.categories}%`);
     paramIndex++;
   }
   if (searchParams.level) {
-    getJobsQuery += ` AND jb_jobs.level ILIKE $${paramIndex}`;
+    getJobsQuery += ` AND jobs.level ILIKE $${paramIndex}`;
     queryParams.push(`%${searchParams.level}%`);
     paramIndex++;
   }
   if (searchParams.compensation) {
-    getJobsQuery += ` AND jb_jobs.compensation ILIKE $${paramIndex}`;
+    getJobsQuery += ` AND jobs.compensation ILIKE $${paramIndex}`;
     queryParams.push(`%${searchParams.compensation}%`);
     paramIndex++;
   }
@@ -630,18 +661,23 @@ async function getCompanyJobDetails(company, searchParams, page) {
   queryParams.push(jobsPerPage, offset);
 
   try {
-    const companyDetailsResult = await executeQuery(getCompanyDetailsQuery, [company]);
+    const companyDetailsResult = await executeQuery(getCompanyDetailsQuery, [
+      company,
+    ]);
     if (companyDetailsResult.length === 0) {
-      return null; 
+      return null;
     }
     const companyDetails = companyDetailsResult[0];
     const companyId = companyDetails.id;
-    console.log('Query:', getJobsQuery);
-    console.log('Params:', [companyId, ...queryParams]);
+    console.log("Query:", getJobsQuery);
+    console.log("Params:", [companyId, ...queryParams]);
 
-    const jobsResult = await executeQuery(getJobsQuery, [companyId, ...queryParams]);
+    const jobsResult = await executeQuery(getJobsQuery, [
+      companyId,
+      ...queryParams,
+    ]);
     return {
-      jobs: jobsResult
+      jobs: jobsResult,
     };
   } catch (error) {
     console.error("Error fetching company details:", error);
@@ -664,5 +700,5 @@ module.exports = {
   insertResume,
   getAllCompanies,
   getCompanyJobDetails,
-  getCompanyDetails
+  getCompanyDetails,
 };

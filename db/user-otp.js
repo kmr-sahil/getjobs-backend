@@ -34,7 +34,7 @@ async function otpSenderMail(email) {
   };
 
   try {
-    await transporter.sendMail(mailOptions);
+    // await transporter.sendMail(mailOptions);
     return otp;
   } catch (error) {
     console.error("Error sending email:", error);
@@ -43,4 +43,4 @@ async function otpSenderMail(email) {
 }
 module.exports = {
     otpSenderMail
-  };
+};

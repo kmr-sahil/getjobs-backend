@@ -10,12 +10,15 @@ async function register(email, password) {
     database: process.env.DB_NAME,
     password: process.env.DB_PASSWORD,
     port: process.env.DB_PORT,
+    ssl: {
+      require: true,
+    },
   });
 
   try {
     await client.connect();
 
-    const query = `SELECT * FROM JB_USERS WHERE email = $1`;
+    const query = `SELECT * FROM users WHERE email = $1`;
     const value = [email];
     const result = await client.query(query, value);
 
@@ -30,10 +33,13 @@ async function register(email, password) {
       return { success: false, message: "Failed to send OTP" };
     }
 
-    const insertQuery = `INSERT INTO JB_USERS (email, password, otp) VALUES ($1, $2, $3) RETURNING *`;
+    const insertQuery = `INSERT INTO users (email, password, otp) VALUES ($1, $2, $3) RETURNING *`;
     await client.query(insertQuery, [email, hashedPassword, otp]);
 
-    return { success: true, message: "User registered successfully. Check your email for OTP." };
+    return {
+      success: true,
+      message: "User registered successfully. Check your email for OTP.",
+    };
   } catch (error) {
     console.error("Error executing query:", error);
     return { success: false, message: "Internal server error" };
@@ -43,5 +49,5 @@ async function register(email, password) {
 }
 
 module.exports = {
-  register
+  register,
 };
