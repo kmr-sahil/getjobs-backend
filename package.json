@@ -1,4 +1,10 @@
 {
+  "name": "getjobs-backend",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.654.0",
     "@aws-sdk/s3-request-presigner": "^3.654.0",
