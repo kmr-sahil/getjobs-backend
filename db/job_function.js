@@ -151,6 +151,7 @@ async function getData(
   commitment
 ) {
   try {
+    console.log()
     let query = `
       SELECT 
         jobs.*, 
@@ -224,7 +225,7 @@ async function getData(
       query += ` WHERE ` + conditions.join(" AND ");
     }
 
-    query += ` ORDER BY jobs.last_update DESC`;
+    query += ` ORDER BY jobs.last_update DESC, jobs.id DESC`;
 
     query += ` OFFSET $${params.length + 1} LIMIT $${params.length + 2}`;
     params.push(offset, limit);
