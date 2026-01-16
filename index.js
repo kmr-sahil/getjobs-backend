@@ -1,14 +1,17 @@
 const express = require("express");
 const app = express();
 const cors = require("cors");
-const mainRouter = require("./routes/main")
-const cookieParser = require('cookie-parser');
+const mainRouter = require("./routes/main");
+const cookieParser = require("cookie-parser");
 
 const isProd = process.env.NODE_ENV === "production";
 const PORT = process.env.PORT || 8282;
 
 const CLIENT_ORIGIN = isProd
-  ? "https://getjobs.today"
+  ? [
+      "https://getjobs.today",
+      "https://getjobs-frontend-i4sxplmsh-kmrsahils-projects.vercel.app",
+    ]
   : "http://localhost:3000";
 
 app.use(express.json());
@@ -22,7 +25,7 @@ app.use(
   })
 );
 
-app.use("/api/v1", mainRouter)
+app.use("/api/v1", mainRouter);
 
 app.get("/", (req, res) => {
   res.send(`Server running in ${isProd ? "PRODUCTION" : "DEVELOPMENT"} mode`);

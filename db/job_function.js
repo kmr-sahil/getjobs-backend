@@ -15,6 +15,54 @@ const pool = new Pool({
   },
 });
 
+const CATEGORY_KEYWORD_MAP = {
+  tech: [
+    "engineer",
+    "developer",
+    "software",
+    "frontend",
+    "backend",
+    "fullstack",
+    "full stack",
+    "react",
+    "node",
+    "java",
+    "python",
+    "typescript",
+    "devops",
+    "data",
+    "cloud",
+  ],
+
+  design: [
+    "design",
+    "designer",
+    "ui",
+    "ux",
+    "product",
+    "product design",
+    "visual",
+    "brand",
+    "graphic",
+    "motion",
+    "figma",
+    "illustration",
+  ],
+
+  sales: [
+    "sales",
+    "business development",
+    "bd",
+    "account executive",
+    "account manager",
+    "crm",
+    "revenue",
+    "growth",
+    "partnership",
+    "customer acquisition",
+  ],
+};
+
 async function executeQuery(query, values = []) {
   const client = await pool.connect();
   try {
@@ -138,8 +186,23 @@ async function getData(
     }
 
     if (categories) {
-      conditions.push(`jobs.categories ILIKE $${params.length + 1}`);
-      params.push(`%${categories}%`);
+      const keywords = CATEGORY_KEYWORD_MAP[categories.toLowerCase()];
+
+      if (keywords && keywords.length > 0) {
+        const keywordConditions = keywords.map((_, idx) => {
+          return `jobs.job_title ILIKE $${params.length + idx + 1}`;
+        });
+
+        conditions.push(`(${keywordConditions.join(" OR ")})`);
+
+        keywords.forEach((keyword) => {
+          params.push(`%${keyword}%`);
+        });
+      } else {
+        // fallback: keep old behavior if category not in mapper
+        conditions.push(`jobs.categories ILIKE $${params.length + 1}`);
+        params.push(`%${categories}%`);
+      }
     }
 
     if (level) {
