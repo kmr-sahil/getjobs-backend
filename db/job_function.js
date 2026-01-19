@@ -148,10 +148,32 @@ async function getData(
   categories,
   level,
   compensation,
-  commitment
+  commitment,
+  companyName,
 ) {
   try {
-    console.log()
+    console.log(
+      "Job search filters ->",
+      "offset:",
+      offset,
+      "| limit:",
+      limit,
+      "| search:",
+      searchTerm || "—",
+      "| location:",
+      location || "—",
+      "| remote:",
+      remote,
+      "| categories:",
+      categories || "—",
+      "| level:",
+      level || "—",
+      "| compensation:",
+      compensation || "—",
+      "| commitment:",
+      commitment || "—",
+    );
+
     let query = `
       SELECT 
         jobs.*, 
@@ -171,10 +193,17 @@ async function getData(
       params.push(`%${searchTerm}%`);
     }
 
+    if (companyName) {
+      conditions.push(
+        `company_profile.company_name ILIKE $${params.length + 1}`,
+      );
+      params.push(`%${companyName}%`);
+    }
+
     if (remote === true) {
       if (location) {
         conditions.push(
-          `jobs.remote = true AND jobs.work_loc ILIKE $${params.length + 1}`
+          `jobs.remote = true AND jobs.work_loc ILIKE $${params.length + 1}`,
         );
         params.push(`%${location}%`);
       } else {
@@ -230,6 +259,9 @@ async function getData(
     query += ` OFFSET $${params.length + 1} LIMIT $${params.length + 2}`;
     params.push(offset, limit);
 
+    console.log("SQL Query:", query);
+    console.log("SQL Params:", params);
+
     const result = await executeQuery(query, params);
     return result;
   } catch (error) {
@@ -270,7 +302,7 @@ async function insertData(
   level,
   compensation,
   name,
-  email
+  email,
 ) {
   try {
     const insertJobQuery = `

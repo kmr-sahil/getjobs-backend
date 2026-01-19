@@ -54,6 +54,7 @@ router.get("/list", async (req, res) => {
     const level = req.query.level || "";
     const compensation = req.query.compensation || "";
     const commitment = req.query.commitment || "";
+    const companyName = req.query.company_name || "";
     const offset = (page - 1) * limit;
 
     const all = await getData(
@@ -65,7 +66,8 @@ router.get("/list", async (req, res) => {
       categories,
       level,
       compensation,
-      commitment
+      commitment,
+      companyName
     );
     res.status(200).json({ all });
   } catch (error) {
